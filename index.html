@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JSON Tool</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Fira+Code&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --bg: #0f1720;
+        --panel: #0b1220;
+        --text: #e6eef6;
+        --muted: #9aa4b2;
+        --accent: #06b6d4;
+        --success: #10b981;
+        --danger: #ef4444;
+        --glass: rgba(255, 255, 255, 0.03);
+        --border-light: rgba(255, 255, 255, 0.04);
+        --border-dashed: rgba(255, 255, 255, 0.03);
+        --row-alt: rgba(255, 255, 255, 0.04);
+        --gradient-start: #065f73;
+        --gradient-end: #0ea5a3;
+        --app-bg-start: #071028;
+        --app-bg-end: #071a2b;
+      }
+
+      .light-theme {
+        --bg: #f8fafc;
+        --panel: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --accent: #0891b2;
+        --success: #059669;
+        --danger: #dc2626;
+        --glass: rgba(0, 0, 0, 0.03);
+        --border-light: rgba(0, 0, 0, 0.08);
+        --border-dashed: rgba(0, 0, 0, 0.1);
+        --row-alt: rgba(0, 0, 0, 0.03);
+        --gradient-start: #0891b2;
+        --gradient-end: #14b8a6;
+        --app-bg-start: #ECE9D8;
+        --app-bg-end: #f0f9ff;
+      }
+
+      html, body {
+        height: 100%;
+        margin: 0;
+        font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+        background: linear-gradient(180deg, var(--app-bg-start) 0%, var(--app-bg-end) 100%);
+        color: var(--text);
+        transition: background-color 0.3s, color 0.3s;
+        overflow: hidden;
+      }
+
+      .app {
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 12px;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+
+      header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .brand { font-weight: 600; font-size: 1.1rem; }
+      .controls { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .btn {
+        background: var(--glass);
+        border: 1px solid var(--border-light);
+        padding: 6px 12px;
+        border-radius: 8px;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+        white-space: nowrap;
+      }
+      .btn:hover { background: var(--border-light); color: var(--text); }
+      .btn.primary { background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end)); color: white; border: none; }
+      
+      main {
+        display: grid;
+        grid-template-columns: 360px 6px 1fr;
+        gap: 8px;
+        align-items: stretch;
+        min-height: 0;
+      }
+
+      .pane {
+        background: var(--panel);
+        border-radius: 8px;
+        padding: 12px;
+        overflow: auto;
+        border: 1px solid var(--border-light);
+        transition: background-color 0.3s;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .split { cursor: col-resize; background: transparent; }
+      
+      .editor-container {
+        flex-grow: 1;
+        border: 1px dashed var(--border-dashed);
+        border-radius: 6px;
+        min-height: 0;
+        overflow: hidden;
+      }
+      
+      #editor { width: 100%; height: 100%; }
+      
+      .tree-container { 
+        font-family: 'Fira Code', monospace; 
+        font-size: 13px; 
+        color: var(--muted); 
+        flex-grow: 1; 
+        overflow-y: auto;
+        position: relative;
+      }
+      .node { padding: 4px 6px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+      .node:hover { background: var(--glass); cursor: pointer; }
+      .node .key { color: var(--text); opacity: 0.9; display: flex; align-items: center; }
+      .node .val { color: var(--accent); opacity: .9; margin-left: auto; }
+      ul { list-style: none; padding-left: 14px; margin: 6px 0; }
+      
+      .node-wrapper:nth-child(even) > .node { background-color: var(--row-alt); }
+      .node-wrapper.collapsed > ul { display: none; }
+      .key .toggler {
+          display: inline-block;
+          width: 1em;
+          text-align: center;
+          margin-right: 4px;
+          transition: transform 0.15s ease;
+      }
+      .node-wrapper:not(.collapsed) .key .toggler { transform: rotate(90deg); }
+
+      .badge { font-size: 12px; padding: 2px 6px; border-radius: 999px; background: var(--glass); color: var(--muted); }
+      .status { font-size: 13px; color: var(--muted); }
+      .error { color: var(--danger); }
+      .success { color: var(--success); }
+      .footer { font-size: 13px; color: var(--muted); margin-top: auto; }
+      .filedrop { 
+        border: 2px dashed var(--border-dashed); 
+        padding: 12px; 
+        border-radius: 6px; 
+        text-align: center; 
+        color: var(--muted); 
+        transition: border-color 0.2s;
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--panel);
+        z-index: 5;
+      }
+      .small { font-size: 12px; }
+      .search { padding: 6px; border-radius: 6px; border: 1px solid var(--border-light); background: transparent; color: var(--muted); width: 100%; box-sizing: border-box; }
+      
+      /* Visualization Panel */
+      #vizPane {
+        height: 400px;
+        display: none; /* Hidden by default */
+        position: relative;
+        padding: 0;
+        border-radius: 8px;
+        border: 1px solid var(--border-dashed);
+        background: var(--bg);
+        overflow: hidden;
+      }
+      #vizPane.fullscreen {
+        position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1000; padding: 20px; box-sizing: border-box; background: var(--panel);
+      }
+      .viz-toolbar { position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 8px; }
+      #vizSvg { width: 100%; height: 100%; cursor: grab; }
+      .viz-message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--muted); }
+      .link { fill: none; stroke: var(--muted); stroke-opacity: 0.4; stroke-width: 1.5px; }
+      .node-viz circle { stroke: var(--border-light); stroke-width: 1.5px; cursor: pointer; }
+      .node-viz text { fill: var(--muted); font-size: 10px; pointer-events: none; }
+      .values-hidden .value-text { display: none; }
+
+      @media (max-width: 900px) {
+        main { grid-template-columns: 1fr; grid-template-rows: 1fr 8px 1fr; }
+        .split { cursor: row-resize; }
+      }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header>
+            <div class="brand">JSON Tool</div>
+            <div class="status small">Editor & Visualizer</div>
+            <div class="controls">
+                <button id="btnValidate" class="btn">Validate</button>
+                <button id="btnFormat" class="btn">Pretty</button>
+                <button id="btnCompact" class="btn">Compact</button>
+                <label class="btn" title="Open file">
+                    Open
+                    <input id="fileInput" type="file" accept="application/json, .json,.txt" style="display:none" />
+                </label>
+                <button id="btnDownload" class="btn">Download</button>
+                <button id="btnCopy" class="btn">Copy</button>
+                <button id="btnWordWrap" class="btn">Word Wrap</button>
+                <button id="btnToggleNetwork" class="btn">Network Graph</button>
+                <button id="btnToggleTree" class="btn">Tree Layout</button>
+                <button id="btnTheme" class="btn"></button>
+            </div>
+        </header>
+
+        <main>
+            <section class="pane left">
+                <div style="display:flex; gap: 8px; align-items: center;">
+                    <input id="search" class="search" placeholder="Filter keys..." />
+                    <div class="badge">Nodes: <span id="nodeCount">0</span></div>
+                </div>
+                <div class="tree-container">
+                    <div id="treeRoot"></div>
+                    <div class="filedrop" id="filedrop">Paste JSON on the right or open a file. Drop a .json here.</div>
+                </div>
+                <div class="footer">Click a node to highlight in editor.</div>
+            </section>
+
+            <div class="split" id="splitter"></div>
+
+            <section class="pane editor">
+                 <div id="editorContainer" class="editor-container">
+                    <div id="editor"></div>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <button id="btnBeautify" class="btn primary">Format</button>
+                    <button id="btnMinify" class="btn">Minify</button>
+                    <button id="btnClear" class="btn">Clear</button>
+                    <div style="margin-left:auto" class="status" id="editorStatus"></div>
+                </div>
+                <div id="vizPane">
+                    <div class="viz-toolbar">
+                        <button id="btnToggleValues" class="btn small">Toggle Values</button>
+                        <button id="btnToggleFullscreen" class="btn small">Full Screen</button>
+                        <button id="btnCloseViz" class="btn small">Close</button>
+                    </div>
+                    <svg id="vizSvg"></svg>
+                    <div id="vizMessage" class="viz-message">Load valid JSON to generate a graph.</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- D3.js Library -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Monaco Editor Loader -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs/loader.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            /**
+             * Main application module for the JSON Tool.
+             * Encapsulates all functionality, state, and UI elements.
+             */
+            const JSONTool = {
+                // Store references to all DOM elements
+                els: {},
+                // Store application state
+                state: {
+                    currentJson: null,
+                    monacoEditor: null,
+                    currentViz: 'none',
+                    networkTransform: d3.zoomIdentity,
+                    treeTransform: d3.zoomIdentity,
+                    pathRangeMap: {},
+                    isSplitterDown: false,
+                },
+
+                // Icons for theme toggle button
+                icons: {
+                    sun: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`,
+                    moon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`
+                },
+
+                /**
+                 * Initializes the application.
+                 */
+                init() {
+                    this.cacheDom();
+                    this.initEditor();
+                    this.applyInitialSettings();
+                    this.bindEvents();
+                },
+
+                /**
+                 * Caches all required DOM elements for faster access.
+                 */
+                cacheDom() {
+                    const ids = [
+                        'treeRoot', 'nodeCount', 'fileInput', 'filedrop',
+                        'btnBeautify', 'btnMinify', 'btnValidate', 'btnFormat', 'btnCompact',
+                        'btnCopy', 'btnDownload', 'btnClear', 'search', 'editorStatus',
+                        'btnTheme', 'btnWordWrap', 'editorContainer', 'btnToggleNetwork',
+                        'btnToggleTree', 'vizPane', 'vizMessage', 'btnToggleValues',
+                        'btnToggleFullscreen', 'btnCloseViz', 'splitter'
+                    ];
+                    ids.forEach(id => this.els[id] = document.getElementById(id));
+                    this.els.vizSvg = d3.select("#vizSvg");
+                },
+
+                /**
+                 * Initializes the Monaco Editor.
+                 */
+                initEditor() {
+                    const savedTheme = localStorage.getItem('json-tool-theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                    const savedWordWrap = localStorage.getItem('json-tool-word-wrap') === 'true';
+
+                    require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs' } });
+                    require(['vs/editor/editor.main'], () => {
+                        this.state.monacoEditor = monaco.editor.create(document.getElementById('editor'), {
+                            language: 'json',
+                            theme: savedTheme === 'light' ? 'vs' : 'vs-dark',
+                            automaticLayout: true,
+                            wordWrap: savedWordWrap ? 'on' : 'off',
+                            minimap: { enabled: false },
+                            scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
+                        });
+
+                        // Debounced listener for editor content changes
+                        this.state.monacoEditor.onDidChangeModelContent(this.utils.debounce(() => {
+                            this.handlers.handleUpdateFromEditor();
+                        }, 400));
+                        
+                        this.loadSampleData();
+                        this.applyTheme(savedTheme);
+                    });
+                },
+
+                /**
+                 * Applies settings from localStorage (theme, word wrap).
+                 */
+                applyInitialSettings() {
+                    const savedTheme = localStorage.getItem('json-tool-theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                    this.applyTheme(savedTheme);
+
+                    const savedWordWrap = localStorage.getItem('json-tool-word-wrap') === 'true';
+                    this.els.btnWordWrap.textContent = savedWordWrap ? 'No Wrap' : 'Word Wrap';
+                },
+
+                /**
+                 * Loads initial sample JSON data into the editor.
+                 */
+                loadSampleData() {
+                    if (!this.state.monacoEditor) return;
+                    const sample = '{\n  "name": "Example",\n  "version": 1,\n  "items": [\n    {"id": 1, "label": "One"},\n    {"id": 2, "label": "Two"}\n  ],\n  "meta": {"author": "You", "date": "2025-08-19"}\n}';
+                    this.state.monacoEditor.setValue(sample);
+                    this.handlers.handleUpdateFromEditor();
+                },
+
+                /**
+                 * Binds all event listeners.
+                 */
+                bindEvents() {
+                    // Main controls
+                    this.els.btnValidate.addEventListener('click', () => this.handlers.handleUpdateFromEditor());
+                    this.els.btnFormat.addEventListener('click', () => this.handlers.handleFormat('pretty'));
+                    this.els.btnCompact.addEventListener('click', () => this.handlers.handleFormat('compact'));
+                    this.els.btnCopy.addEventListener('click', () => this.handlers.handleCopy());
+                    this.els.btnDownload.addEventListener('click', () => this.handlers.handleDownload());
+
+                    // Editor controls
+                    this.els.btnBeautify.addEventListener('click', () => this.handlers.handleFormat('pretty'));
+                    this.els.btnMinify.addEventListener('click', () => this.handlers.handleFormat('compact'));
+                    this.els.btnClear.addEventListener('click', () => this.handlers.handleClear());
+                    
+                    // File handling
+                    this.els.fileInput.addEventListener('change', (e) => this.handlers.handleFileSelect(e));
+                    ['dragenter', 'dragover'].forEach(ev => this.els.filedrop.addEventListener(ev, this.handlers.handleDragOver));
+                    ['dragleave', 'drop'].forEach(ev => this.els.filedrop.addEventListener(ev, this.handlers.handleDragLeave));
+                    this.els.filedrop.addEventListener('drop', (e) => this.handlers.handleFileDrop(e));
+
+                    // UI Toggles
+                    this.els.btnTheme.addEventListener('click', () => this.handlers.handleThemeToggle());
+                    this.els.btnWordWrap.addEventListener('click', () => this.handlers.handleWordWrapToggle());
+
+                    // Search/Filter
+                    this.els.search.addEventListener('input', this.utils.debounce(() => this.handlers.handleSearch(), 200));
+                    
+                    // Splitter
+                    this.els.splitter.addEventListener('mousedown', () => { this.state.isSplitterDown = true; document.body.style.cursor = 'col-resize'; });
+                    window.addEventListener('mouseup', () => { if(this.state.isSplitterDown) { this.state.isSplitterDown = false; document.body.style.cursor = 'default'; }});
+                    window.addEventListener('mousemove', (e) => this.handlers.handleSplitterMove(e));
+
+                    // Visualization
+                    this.els.btnToggleNetwork.addEventListener('click', () => this.visualization.show('network'));
+                    this.els.btnToggleTree.addEventListener('click', () => this.visualization.show('tree'));
+                    this.els.btnCloseViz.addEventListener('click', () => this.visualization.hide());
+                    this.els.btnToggleValues.addEventListener('click', () => this.els.vizSvg.node().classList.toggle('values-hidden'));
+                    this.els.btnToggleFullscreen.addEventListener('click', () => this.visualization.toggleFullscreen());
+                    
+                    // Keyboard shortcuts
+                    window.addEventListener('keydown', (e) => this.handlers.handleKeyDown(e));
+                },
+
+                // --- Event Handlers ---
+                handlers: {
+                    handleUpdateFromEditor() {
+                        if (!JSONTool.state.monacoEditor) return;
+                        const text = JSONTool.state.monacoEditor.getValue().trim();
+                        
+                        JSONTool.els.vizMessage.style.display = 'block';
+                        JSONTool.els.vizSvg.selectAll("*").remove();
+
+                        if (text === '') {
+                            JSONTool.els.treeRoot.innerHTML = '';
+                            JSONTool.els.filedrop.style.display = 'flex';
+                            JSONTool.els.nodeCount.textContent = '0';
+                            JSONTool.state.currentJson = null;
+                            JSONTool.ui.setStatus('');
+                            JSONTool.els.vizMessage.textContent = 'Load valid JSON to generate a graph.';
+                            return;
+                        }
+
+                        try {
+                            const json = JSONTool.core.parseJson(text);
+                            JSONTool.state.currentJson = json;
+                            JSONTool.els.filedrop.style.display = 'none';
+                            JSONTool.treeView.render(json);
+                            JSONTool.core.buildPathMap();
+                            JSONTool.els.vizMessage.textContent = 'Select a visualization type to see the graph.';
+                            if (JSONTool.els.vizPane.style.display === 'block') {
+                                JSONTool.visualization.render();
+                            }
+                        } catch (e) {
+                            JSONTool.state.currentJson = null;
+                            JSONTool.state.pathRangeMap = {};
+                            JSONTool.els.vizMessage.textContent = 'Invalid JSON. Cannot generate graph.';
+                        }
+                    },
+                    handleFormat(mode) {
+                        if (!JSONTool.state.monacoEditor) return;
+                        try {
+                            const json = JSONTool.core.parseJson(JSONTool.state.monacoEditor.getValue());
+                            const formatted = mode === 'compact' ? JSON.stringify(json) : JSON.stringify(json, null, 2);
+                            JSONTool.state.monacoEditor.setValue(formatted);
+                            this.handleUpdateFromEditor();
+                        } catch (e) { /* Error is already shown by parseJson */ }
+                    },
+                    handleCopy() {
+                        if (!JSONTool.state.monacoEditor) return;
+                        navigator.clipboard.writeText(JSONTool.state.monacoEditor.getValue())
+                            .then(() => JSONTool.ui.setStatus('Copied to clipboard', 'success'))
+                            .catch(() => JSONTool.ui.setStatus('Copy failed', 'error'));
+                    },
+                    handleDownload() {
+                        if (!JSONTool.state.monacoEditor) return;
+                        const blob = new Blob([JSONTool.state.monacoEditor.getValue()], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'data.json';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                    },
+                    handleClear() {
+                        if (!JSONTool.state.monacoEditor) return;
+                        JSONTool.state.monacoEditor.setValue('');
+                        this.handleUpdateFromEditor();
+                        JSONTool.ui.setStatus('Cleared');
+                    },
+                    handleFileRead(result) {
+                        if (JSONTool.state.monacoEditor) {
+                            JSONTool.state.monacoEditor.setValue(result);
+                            this.handleUpdateFromEditor();
+                        }
+                    },
+                    handleFileSelect(e) {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => this.handleFileRead(reader.result);
+                        reader.readAsText(file);
+                    },
+                    handleDragOver(e) {
+                        e.preventDefault();
+                        JSONTool.els.filedrop.style.borderColor = 'var(--accent)';
+                    },
+                    handleDragLeave(e) {
+                        e.preventDefault();
+                        JSONTool.els.filedrop.style.borderColor = '';
+                    },
+                    handleFileDrop(e) {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => this.handleFileRead(reader.result);
+                        reader.readAsText(file);
+                    },
+                    handleThemeToggle() {
+                        const isLight = document.body.classList.contains('light-theme');
+                        JSONTool.applyTheme(isLight ? 'dark' : 'light');
+                    },
+                    handleWordWrapToggle() {
+                        if (!JSONTool.state.monacoEditor) return;
+                        const options = JSONTool.state.monacoEditor.getOptions();
+                        const isEnabled = options.get(monaco.editor.EditorOption.wordWrap) === 'off';
+                        JSONTool.state.monacoEditor.updateOptions({ wordWrap: isEnabled ? 'on' : 'off' });
+                        localStorage.setItem('json-tool-word-wrap', isEnabled);
+                        JSONTool.els.btnWordWrap.textContent = isEnabled ? 'No Wrap' : 'Word Wrap';
+                    },
+                    handleSearch() {
+                        const query = JSONTool.els.search.value.trim().toLowerCase();
+                        const nodes = Array.from(JSONTool.els.treeRoot.querySelectorAll('.node-wrapper'));
+
+                        if (query === '') {
+                            nodes.forEach(node => node.style.display = '');
+                            return;
+                        }
+
+                        // First pass: hide/show based on direct match
+                        nodes.forEach(node => {
+                            const key = node.querySelector('.key')?.textContent?.trim().toLowerCase() || '';
+                            const isMatch = key.includes(query);
+                            node.style.display = isMatch ? '' : 'none';
+                            node.dataset.isMatch = isMatch;
+                        });
+
+                        // Second pass: show parents of matched nodes
+                        nodes.forEach(node => {
+                            if (node.dataset.isMatch === 'true') {
+                                let parent = node.parentElement;
+                                while (parent && parent !== JSONTool.els.treeRoot) {
+                                    if (parent.classList.contains('node-wrapper')) {
+                                        parent.style.display = '';
+                                    }
+                                    parent = parent.parentElement;
+                                }
+                            }
+                        });
+                    },
+                    handleSplitterMove(e) {
+                        if (!JSONTool.state.isSplitterDown) return;
+                        const main = document.querySelector('main');
+                        const rect = main.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const col = Math.max(200, Math.min(rect.width - 200, x));
+                        main.style.gridTemplateColumns = `${col}px 6px 1fr`;
+                    },
+                    handleKeyDown(e) {
+                        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                            e.preventDefault();
+                            JSONTool.els.btnDownload.click();
+                        }
+                        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                            e.preventDefault();
+                            JSONTool.els.btnBeautify.click();
+                        }
+                    }
+                },
+
+                // --- Core Logic ---
+                core: {
+                    parseJson(text) {
+                        try {
+                            const json = JSON.parse(text);
+                            JSONTool.ui.setStatus('Valid JSON', 'success');
+                            return json;
+                        } catch (e) {
+                            JSONTool.ui.setStatus(`Invalid JSON: ${e.message}`, 'error');
+                            throw e;
+                        }
+                    },
+                    buildPathMap() {
+                        if (!JSONTool.state.monacoEditor || !JSONTool.state.currentJson) {
+                            JSONTool.state.pathRangeMap = {};
+                            return;
+                        }
+                        
+                        JSONTool.state.pathRangeMap = {};
+                        const model = JSONTool.state.monacoEditor.getModel();
+                        if (!model) return;
+
+                        const keyOccurrences = {};
+
+                        function traverse(obj, path) {
+                            if (obj === null || typeof obj !== 'object') return;
+
+                            if (Array.isArray(obj)) {
+                                obj.forEach((item, index) => {
+                                    const currentPath = path ? `${path}.${JSONTool.utils.escapeKey(index)}` : JSONTool.utils.escapeKey(index);
+                                    traverse(item, currentPath);
+                                });
+                            } else {
+                                for (const key of Object.keys(obj)) {
+                                    const escapedKey = JSONTool.utils.escapeKey(key);
+                                    const currentPath = path ? `${path}.${escapedKey}` : escapedKey;
+
+                                    keyOccurrences[key] = (keyOccurrences[key] || 0) + 1;
+                                    const occurrenceIndex = keyOccurrences[key] - 1;
+
+                                    const searchString = `"${key}"`;
+                                    const matches = model.findMatches(searchString, true, false, true, null, true);
+                                    
+                                    if (matches[occurrenceIndex]) {
+                                        JSONTool.state.pathRangeMap[currentPath] = matches[occurrenceIndex].range;
+                                    }
+                                    traverse(obj[key], currentPath);
+                                }
+                            }
+                        }
+                        traverse(JSONTool.state.currentJson, '');
+                    }
+                },
+
+                // --- Tree View Rendering ---
+                treeView: {
+                    render(obj) {
+                        this.container = JSONTool.els.treeRoot;
+                        this.container.innerHTML = '';
+                        let count = 0;
+
+                        const createNodeElement = (node, path) => {
+                            count++;
+                            const nodeWrapper = document.createElement('div');
+                            nodeWrapper.className = 'node-wrapper';
+                            
+                            const nodeHeader = document.createElement('div');
+                            nodeHeader.className = 'node';
+                            
+                            const keySpan = document.createElement('span');
+                            keySpan.className = 'key';
+                            
+                            const valSpan = document.createElement('span');
+                            valSpan.className = 'val';
+                            
+                            const isExpandable = node !== null && typeof node === 'object';
+
+                            if (isExpandable) {
+                                const toggler = document.createElement('span');
+                                toggler.className = 'toggler';
+                                toggler.textContent = '▶';
+                                keySpan.appendChild(toggler);
+                            }
+
+                            const keyText = document.createElement('span');
+                            keyText.textContent = JSONTool.utils.getNameFromPath(path);
+                            keySpan.appendChild(keyText);
+
+                            if (Array.isArray(node)) {
+                                valSpan.textContent = `[${node.length}]`;
+                            } else if (isExpandable) {
+                                valSpan.textContent = `{${Object.keys(node).length}}`;
+                            } else {
+                                valSpan.textContent = JSON.stringify(node);
+                            }
+
+                            nodeHeader.append(keySpan, valSpan);
+                            nodeWrapper.appendChild(nodeHeader);
+
+                            if (isExpandable) {
+                                nodeWrapper.classList.add('collapsed');
+                                const childrenList = document.createElement('ul');
+                                for (const key in node) {
+                                    const childPath = path ? `${path}.${JSONTool.utils.escapeKey(key)}` : JSONTool.utils.escapeKey(key);
+                                    childrenList.appendChild(createNodeElement(node[key], childPath));
+                                }
+                                nodeWrapper.appendChild(childrenList);
+                            }
+
+                            nodeHeader.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                this.selectNode(path);
+                                if (isExpandable) {
+                                    nodeWrapper.classList.toggle('collapsed');
+                                }
+                            });
+                            return nodeWrapper;
+                        };
+
+                        const rootNode = createNodeElement(obj, '');
+                        if (rootNode.classList.contains('collapsed')) {
+                            rootNode.classList.remove('collapsed');
+                        }
+                        this.container.appendChild(rootNode);
+                        JSONTool.els.nodeCount.textContent = count;
+                    },
+                    selectNode(path) {
+                        const { monacoEditor, pathRangeMap } = JSONTool.state;
+                        if (!monacoEditor) return;
+
+                        // Highlight in editor
+                        if (pathRangeMap[path]) {
+                            const range = pathRangeMap[path];
+                            monacoEditor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
+                            monacoEditor.setSelection(range);
+                            monacoEditor.focus();
+                        }
+                    }
+                },
+
+                // --- D3 Visualization Logic ---
+                visualization: {
+                    show(vizType) {
+                        JSONTool.els.vizPane.style.display = 'block';
+                        JSONTool.state.currentViz = vizType;
+                        this.render();
+                    },
+                    hide() {
+                        JSONTool.els.vizPane.style.display = 'none';
+                        JSONTool.state.currentViz = 'none';
+                    },
+                    render() {
+                        if (JSONTool.state.currentJson) {
+                            if (JSONTool.state.currentViz === 'network') this.renderNetworkGraph(JSONTool.state.currentJson);
+                            if (JSONTool.state.currentViz === 'tree') this.renderTreeLayout(JSONTool.state.currentJson);
+                        }
+                    },
+                    toggleFullscreen() {
+                        const isFullscreen = JSONTool.els.vizPane.classList.toggle('fullscreen');
+                        JSONTool.els.btnToggleFullscreen.textContent = isFullscreen ? 'Exit Full Screen' : 'Full Screen';
+                        setTimeout(() => this.render(), 100); // Re-render after transition
+                    },
+                    transformJsonToHierarchy(obj) {
+                        function traverse(data, name, path) {
+                            const item = { name, path };
+                            if (typeof data === 'object' && data !== null) {
+                                item.children = Object.entries(data).map(([key, value]) => traverse(value, key, path ? `${path}.${JSONTool.utils.escapeKey(key)}` : JSONTool.utils.escapeKey(key)));
+                            } else {
+                                item.value = data;
+                            }
+                            return item;
+                        }
+                        return traverse(obj, 'root', '');
+                    },
+                    renderTreeLayout(json) {
+                        const root = d3.hierarchy(this.transformJsonToHierarchy(json));
+                        JSONTool.els.vizSvg.selectAll("*").remove();
+                        JSONTool.els.vizMessage.style.display = 'none';
+
+                        const dx = 40, dy = 220;
+                        const treeLayout = d3.tree().nodeSize([dx, dy]);
+                        treeLayout(root);
+
+                        let x0 = Infinity, x1 = -x0;
+                        root.each(d => {
+                            if (d.x > x1) x1 = d.x;
+                            if (d.x < x0) x0 = d.x;
+                        });
+
+                        const height = x1 - x0 + dx * 2;
+                        const width = (root.height + 1) * dy;
+
+                        const container = JSONTool.els.vizSvg
+                            .attr("viewBox", [-dy / 1.5, x0 - dx, width + dy, height])
+                            .append("g");
+
+                        container.append('g').selectAll('path').data(root.links()).enter().append('path')
+                            .attr('d', d3.linkHorizontal().x(d => d.y).y(d => d.x))
+                            .attr("class", "link");
+
+                        const node = container.append('g').selectAll('g').data(root.descendants()).enter().append('g')
+                            .attr('class', 'node-viz') 
+                            .attr('transform', d => `translate(${d.y},${d.x})`)
+                            .on('click', (event, d) => JSONTool.treeView.selectNode(d.data.path));
+
+                        node.append('circle').attr('r', 6).style("fill", d => d.children ? 'var(--accent)' : 'var(--success)');
+                        const text = node.append('text').attr('dy', '0.31em').attr('x', d => d.children ? -12 : 12).attr('text-anchor', d => d.children ? 'end' : 'start');
+                        text.append("tspan").text(d => d.data.name);
+                        text.append("tspan").attr("class", "value-text").text(d => d.data.value !== undefined ? `: ${d.data.value}` : '');
+                        
+                        const zoom = d3.zoom().scaleExtent([0.1, Infinity]).on("zoom", (event) => {
+                            container.attr("transform", event.transform);
+                            JSONTool.state.treeTransform = event.transform;
+                        });
+                        JSONTool.els.vizSvg.call(zoom).call(zoom.transform, JSONTool.state.treeTransform);
+                    },
+                    transformJsonToGraphData(obj) {
+                        const nodes = [], links = [];
+                        let idCounter = 0;
+                        function traverse(data, parentId, key, path) {
+                            const nodeId = idCounter++;
+                            let nodeValue = '', type = 'object';
+
+                            if (typeof data !== 'object' || data === null) {
+                                nodeValue = `: ${String(data)}`; type = 'value';
+                            } else if (Array.isArray(data)) {
+                                nodeValue = ' []'; type = 'array';
+                            } else {
+                                nodeValue = ' {}';
+                            }
+                            
+                            nodes.push({ id: nodeId, key, value: nodeValue, type, path });
+                            if (parentId !== null) links.push({ source: parentId, target: nodeId });
+
+                            if (typeof data === 'object' && data !== null) {
+                                for (const k in data) {
+                                    traverse(data[k], nodeId, k, path ? `${path}.${JSONTool.utils.escapeKey(k)}` : JSONTool.utils.escapeKey(k));
+                                }
+                            }
+                        }
+                        traverse(obj, null, 'root', '');
+                        return { nodes, links };
+                    },
+                    renderNetworkGraph(json) {
+                        const { nodes, links } = this.transformJsonToGraphData(json);
+                        JSONTool.els.vizSvg.selectAll("*").remove();
+                        JSONTool.els.vizMessage.style.display = 'none';
+
+                        if (!nodes.length) {
+                            JSONTool.els.vizMessage.textContent = 'No data to visualize.';
+                            JSONTool.els.vizMessage.style.display = 'block';
+                            return;
+                        }
+
+                        const width = JSONTool.els.vizPane.clientWidth, height = JSONTool.els.vizPane.clientHeight;
+                        const simulation = d3.forceSimulation(nodes)
+                            .force("link", d3.forceLink(links).id(d => d.id).distance(50))
+                            .force("charge", d3.forceManyBody().strength(-100))
+                            .force("center", d3.forceCenter(width / 2, height / 2));
+
+                        const container = JSONTool.els.vizSvg.append("g");
+                        const link = container.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
+                        const node = container.append("g").selectAll("g").data(nodes).enter().append("g")
+                            .attr("class", "node-viz")
+                            .on('click', (event, d) => JSONTool.treeView.selectNode(d.path))
+                            .call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
+
+                        node.append("circle").attr("r", d => d.type === 'value' ? 4 : 8).style("fill", d => d.type === 'array' ? 'var(--accent)' : (d.type === 'value' ? 'var(--success)' : 'var(--muted)'));
+                        const text = node.append("text").attr("x", 12).attr("dy", ".35em");
+                        text.append("tspan").text(d => d.key);
+                        text.append("tspan").attr("class", "value-text").text(d => d.value);
+
+                        simulation.on("tick", () => {
+                            link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+                            node.attr("transform", d => `translate(${d.x},${d.y})`);
+                        });
+                        
+                        const zoom = d3.zoom().scaleExtent([0.1, Infinity]).on("zoom", (event) => {
+                            container.attr("transform", event.transform);
+                            JSONTool.state.networkTransform = event.transform;
+                        });
+                        JSONTool.els.vizSvg.call(zoom).call(zoom.transform, JSONTool.state.networkTransform);
+
+                        function dragstarted(event, d) { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+                        function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+                        function dragended(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+                    }
+                },
+
+                // --- UI Helpers ---
+                ui: {
+                    setStatus(msg, type = '') {
+                        JSONTool.els.editorStatus.textContent = msg;
+                        JSONTool.els.editorStatus.className = `status ${type}`;
+                    }
+                },
+                
+                // --- Utility Functions ---
+                utils: {
+                    debounce(func, delay) {
+                        let timeout;
+                        return function(...args) {
+                            clearTimeout(timeout);
+                            timeout = setTimeout(() => func.apply(this, args), delay);
+                        };
+                    },
+                    escapeKey: (k) => String(k).replace(/\./g, '::DOT::'),
+                    unescapeKey: (k) => String(k).replace(/::DOT::/g, '.'),
+                    getNameFromPath(p) {
+                        if (p === '') return '[root]';
+                        const parts = p.split('.');
+                        return this.unescapeKey(parts[parts.length - 1]);
+                    },
+                    prettyPrint: (obj, spaces) => {
+                        try { return JSON.stringify(obj, null, spaces); } catch (e) { return String(obj); }
+                    }
+                },
+
+                /**
+                 * Applies a color theme to the UI and editor.
+                 * @param {string} theme - 'light' or 'dark'
+                 */
+                applyTheme(theme) {
+                    if (theme === 'light') {
+                        document.body.classList.add('light-theme');
+                        this.els.btnTheme.innerHTML = this.icons.moon + ' Dark';
+                        if (this.state.monacoEditor) monaco.editor.setTheme('vs');
+                    } else {
+                        document.body.classList.remove('light-theme');
+                        this.els.btnTheme.innerHTML = this.icons.sun + ' Light';
+                        if (this.state.monacoEditor) monaco.editor.setTheme('vs-dark');
+                    }
+                    localStorage.setItem('json-tool-theme', theme);
+                }
+            };
+
+            // Start the application
+            JSONTool.init();
+        });
+    </script>
+</body>
+</html>
