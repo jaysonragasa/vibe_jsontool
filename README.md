@@ -1,4 +1,6 @@
-# JSON Tool — Tree, Editor & Visualizer
+![alt text](https://raw.githubusercontent.com/jaysonragasa/vibe_jsontool/refs/heads/main/ss1.png)
+
+# JSON Tool — Tree, Editor, Prettifier, & Visualizer
 
 A powerful, browser-based utility for developers to inspect, edit, validate, and visualize JSON data. This tool combines a feature-rich Monaco editor with an interactive tree view and dynamic D3.js-powered visualizations, all in a clean, responsive, dual-pane interface.
 
