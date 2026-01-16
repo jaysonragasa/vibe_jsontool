@@ -211,7 +211,7 @@
       }
       .viz-toolbar { position: absolute; top: 8px; left: 8px; z-index: 10; display: flex; gap: 8px; }
       #vizSvg { width: 100%; height: 100%; cursor: grab; }
-      .viz-message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--muted); }
+      .viz-message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--muted); text-align: center; width: 80%; }
       .link { fill: none; stroke: var(--muted); stroke-opacity: 0.4; stroke-width: 1.5px; }
       .node-viz circle { stroke: var(--border-light); stroke-width: 1.5px; cursor: pointer; }
       .node-viz text { fill: var(--muted); font-size: 10px; pointer-events: none; }
@@ -293,33 +293,28 @@
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.33.0/min/vs/loader.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            /**
-             * Main application module for the JSON Tool.
-             * Encapsulates all functionality, state, and UI elements.
-             */
             const JSONTool = {
-                // Store references to all DOM elements
                 els: {},
-                // Store application state
                 state: {
                     currentJson: null,
                     monacoEditor: null,
                     currentViz: 'none',
                     networkTransform: d3.zoomIdentity,
                     treeTransform: d3.zoomIdentity,
-                    pathRangeMap: {},
+                    pathRangeMap: {}, // Map for tree -> editor jumping
                     isSplitterDown: false,
+                    totalNodes: 0,
+                    perfGuard: {
+                        maxNodesForViz: 3000,
+                        maxLinesForPathMap: 50000 // Only used for the Tree -> Editor highlight
+                    }
                 },
 
-                // Icons for theme toggle button
                 icons: {
                     sun: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`,
                     moon: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`
                 },
 
-                /**
-                 * Initializes the application.
-                 */
                 init() {
                     this.cacheDom();
                     this.initEditor();
@@ -327,9 +322,6 @@
                     this.bindEvents();
                 },
 
-                /**
-                 * Caches all required DOM elements for faster access.
-                 */
                 cacheDom() {
                     const ids = [
                         'treeRoot', 'nodeCount', 'fileInput', 'filedrop',
@@ -343,9 +335,6 @@
                     this.els.vizSvg = d3.select("#vizSvg");
                 },
 
-                /**
-                 * Initializes the Monaco Editor.
-                 */
                 initEditor() {
                     const savedTheme = localStorage.getItem('json-tool-theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
                     const savedWordWrap = localStorage.getItem('json-tool-word-wrap') === 'true';
@@ -361,24 +350,19 @@
                             scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
                         });
 
-                        // Debounced listener for editor content changes
                         this.state.monacoEditor.onDidChangeModelContent(this.utils.debounce(() => {
                             this.handlers.handleUpdateFromEditor();
-                        }, 400));
+                        }, 500));
 
-                        // Listener for cursor/selection changes to update breadcrumb
                         this.state.monacoEditor.onDidChangeCursorSelection(this.utils.debounce(() => {
                             this.handlers.handleCursorChange();
-                        }, 50));
+                        }, 100));
                         
                         this.loadSampleData();
                         this.applyTheme(savedTheme);
                     });
                 },
 
-                /**
-                 * Applies settings from localStorage (theme, word wrap).
-                 */
                 applyInitialSettings() {
                     const savedTheme = localStorage.getItem('json-tool-theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
                     this.applyTheme(savedTheme);
@@ -387,9 +371,6 @@
                     this.els.btnWordWrap.textContent = savedWordWrap ? 'No Wrap' : 'Word Wrap';
                 },
 
-                /**
-                 * Loads initial sample JSON data into the editor.
-                 */
                 loadSampleData() {
                     if (!this.state.monacoEditor) return;
                     const sample = '{\n  "name": "Example",\n  "version": 1,\n  "items": [\n    {"id": 1, "label": "One"},\n    {"id": 2, "label": "Two"}\n  ],\n  "meta": {"author": "You", "date": "2025-08-19"}\n}';
@@ -397,52 +378,33 @@
                     this.handlers.handleUpdateFromEditor();
                 },
 
-                /**
-                 * Binds all event listeners.
-                 */
                 bindEvents() {
-                    // Main controls
                     this.els.btnValidate.addEventListener('click', () => this.handlers.handleUpdateFromEditor());
                     this.els.btnFormat.addEventListener('click', () => this.handlers.handleFormat('pretty'));
                     this.els.btnCompact.addEventListener('click', () => this.handlers.handleFormat('compact'));
                     this.els.btnCopy.addEventListener('click', () => this.handlers.handleCopy());
                     this.els.btnDownload.addEventListener('click', () => this.handlers.handleDownload());
-
-                    // Editor controls
                     this.els.btnBeautify.addEventListener('click', () => this.handlers.handleFormat('pretty'));
                     this.els.btnMinify.addEventListener('click', () => this.handlers.handleFormat('compact'));
                     this.els.btnClear.addEventListener('click', () => this.handlers.handleClear());
-                    
-                    // File handling
                     this.els.fileInput.addEventListener('change', (e) => this.handlers.handleFileSelect(e));
                     ['dragenter', 'dragover'].forEach(ev => this.els.filedrop.addEventListener(ev, this.handlers.handleDragOver));
                     ['dragleave', 'drop'].forEach(ev => this.els.filedrop.addEventListener(ev, this.handlers.handleDragLeave));
                     this.els.filedrop.addEventListener('drop', (e) => this.handlers.handleFileDrop(e));
-
-                    // UI Toggles
                     this.els.btnTheme.addEventListener('click', () => this.handlers.handleThemeToggle());
                     this.els.btnWordWrap.addEventListener('click', () => this.handlers.handleWordWrapToggle());
-
-                    // Search/Filter
-                    this.els.search.addEventListener('input', this.utils.debounce(() => this.handlers.handleSearch(), 200));
-                    
-                    // Splitter
+                    this.els.search.addEventListener('input', this.utils.debounce(() => this.handlers.handleSearch(), 300));
                     this.els.splitter.addEventListener('mousedown', () => { this.state.isSplitterDown = true; document.body.style.cursor = 'col-resize'; });
                     window.addEventListener('mouseup', () => { if(this.state.isSplitterDown) { this.state.isSplitterDown = false; document.body.style.cursor = 'default'; }});
                     window.addEventListener('mousemove', (e) => this.handlers.handleSplitterMove(e));
-
-                    // Visualization
                     this.els.btnToggleNetwork.addEventListener('click', () => this.visualization.show('network'));
                     this.els.btnToggleTree.addEventListener('click', () => this.visualization.show('tree'));
                     this.els.btnCloseViz.addEventListener('click', () => this.visualization.hide());
                     this.els.btnToggleValues.addEventListener('click', () => this.els.vizSvg.node().classList.toggle('values-hidden'));
                     this.els.btnToggleFullscreen.addEventListener('click', () => this.visualization.toggleFullscreen());
-                    
-                    // Keyboard shortcuts
                     window.addEventListener('keydown', (e) => this.handlers.handleKeyDown(e));
                 },
 
-                // --- Event Handlers ---
                 handlers: {
                     handleUpdateFromEditor() {
                         if (!JSONTool.state.monacoEditor) return;
@@ -457,7 +419,6 @@
                             JSONTool.els.nodeCount.textContent = '0';
                             JSONTool.state.currentJson = null;
                             JSONTool.ui.setStatus('');
-                            JSONTool.els.vizMessage.textContent = 'Load valid JSON to generate a graph.';
                             JSONTool.ui.updateBreadcrumb('');
                             return;
                         }
@@ -468,6 +429,12 @@
                             JSONTool.els.filedrop.style.display = 'none';
                             JSONTool.treeView.render(json);
                             JSONTool.core.buildPathMap();
+                            
+                            const lineCount = JSONTool.state.monacoEditor.getModel().getLineCount();
+                            if (lineCount > JSONTool.state.perfGuard.maxLinesForPathMap) {
+                                JSONTool.ui.setStatus(`Large file (${lineCount} lines). Tree-to-Editor highlight limited to first ${JSONTool.state.perfGuard.maxLinesForPathMap} lines.`, 'success');
+                            }
+
                             JSONTool.els.vizMessage.textContent = 'Select a visualization type to see the graph.';
                             if (JSONTool.els.vizPane.style.display === 'block') {
                                 JSONTool.visualization.render();
@@ -481,32 +448,14 @@
                         }
                     },
                     handleCursorChange() {
-                        if (!JSONTool.state.monacoEditor || !JSONTool.state.pathRangeMap) return;
+                        if (!JSONTool.state.monacoEditor) return;
                         
                         const position = JSONTool.state.monacoEditor.getPosition();
                         if (!position) return;
 
-                        const line = position.lineNumber;
-                        let bestPath = '';
-                        let maxLine = -1;
-
-                        // Find the "deepest" path that starts at or before the current cursor line
-                        // This identifies where the user is currently working.
-                        for (const path in JSONTool.state.pathRangeMap) {
-                            const range = JSONTool.state.pathRangeMap[path];
-                            if (range.startLineNumber <= line) {
-                                if (range.startLineNumber > maxLine) {
-                                    maxLine = range.startLineNumber;
-                                    bestPath = path;
-                                } else if (range.startLineNumber === maxLine) {
-                                    // If same line, pick the longer path (nested item)
-                                    if (path.length > bestPath.length) {
-                                        bestPath = path;
-                                    }
-                                }
-                            }
-                        }
-                        JSONTool.ui.updateBreadcrumb(bestPath);
+                        // NEW: On-demand path calculation for breadcrumbs (efficient for any size)
+                        const currentPath = JSONTool.utils.getPathAtPosition(JSONTool.state.monacoEditor.getModel(), position);
+                        JSONTool.ui.updateBreadcrumb(currentPath);
                     },
                     handleFormat(mode) {
                         if (!JSONTool.state.monacoEditor) return;
@@ -515,7 +464,7 @@
                             const formatted = mode === 'compact' ? JSON.stringify(json) : JSON.stringify(json, null, 2);
                             JSONTool.state.monacoEditor.setValue(formatted);
                             this.handleUpdateFromEditor();
-                        } catch (e) { /* Error is already shown by parseJson */ }
+                        } catch (e) {}
                     },
                     handleCopy() {
                         if (!JSONTool.state.monacoEditor) return;
@@ -591,7 +540,6 @@
                             return;
                         }
 
-                        // First pass: hide/show based on direct match
                         nodes.forEach(node => {
                             const key = node.querySelector('.key')?.textContent?.trim().toLowerCase() || '';
                             const isMatch = key.includes(query);
@@ -599,7 +547,6 @@
                             node.dataset.isMatch = isMatch;
                         });
 
-                        // Second pass: show parents of matched nodes
                         nodes.forEach(node => {
                             if (node.dataset.isMatch === 'true') {
                                 let parent = node.parentElement;
@@ -632,7 +579,6 @@
                     }
                 },
 
-                // --- Core Logic ---
                 core: {
                     parseJson(text) {
                         try {
@@ -649,15 +595,16 @@
                             JSONTool.state.pathRangeMap = {};
                             return;
                         }
-                        
-                        JSONTool.state.pathRangeMap = {};
+
                         const model = JSONTool.state.monacoEditor.getModel();
                         if (!model) return;
 
+                        JSONTool.state.pathRangeMap = {};
                         const keyOccurrences = {};
+                        let lineLimitReached = false;
 
                         function traverse(obj, path) {
-                            if (obj === null || typeof obj !== 'object') return;
+                            if (lineLimitReached || obj === null || typeof obj !== 'object') return;
 
                             if (Array.isArray(obj)) {
                                 obj.forEach((item, index) => {
@@ -676,7 +623,12 @@
                                     const matches = model.findMatches(searchString, true, false, true, null, true);
                                     
                                     if (matches[occurrenceIndex]) {
-                                        JSONTool.state.pathRangeMap[currentPath] = matches[occurrenceIndex].range;
+                                        const range = matches[occurrenceIndex].range;
+                                        if (range.startLineNumber > JSONTool.state.perfGuard.maxLinesForPathMap) {
+                                            // Stop mapping Tree -> Editor after limit to keep UI smooth
+                                            return; 
+                                        }
+                                        JSONTool.state.pathRangeMap[currentPath] = range;
                                     }
                                     traverse(obj[key], currentPath);
                                 }
@@ -686,17 +638,21 @@
                     }
                 },
 
-                // --- Tree View Rendering ---
                 treeView: {
                     render(obj) {
                         this.container = JSONTool.els.treeRoot;
                         this.container.innerHTML = '';
-                        let count = 0;
-
+                        
+                        const calculateShallowCount = (o) => {
+                            if (o === null || typeof o !== 'object') return 1;
+                            if (Array.isArray(o)) return o.length;
+                            return Object.keys(o).length;
+                        };
+                        
                         const createNodeElement = (node, path) => {
-                            count++;
                             const nodeWrapper = document.createElement('div');
                             nodeWrapper.className = 'node-wrapper';
+                            nodeWrapper.classList.add('collapsed');
                             
                             const nodeHeader = document.createElement('div');
                             nodeHeader.className = 'node';
@@ -732,47 +688,63 @@
                             nodeWrapper.appendChild(nodeHeader);
 
                             if (isExpandable) {
-                                nodeWrapper.classList.add('collapsed');
-                                const childrenList = document.createElement('ul');
-                                for (const key in node) {
-                                    const childPath = path ? `${path}.${JSONTool.utils.escapeKey(key)}` : JSONTool.utils.escapeKey(key);
-                                    childrenList.appendChild(createNodeElement(node[key], childPath));
-                                }
-                                nodeWrapper.appendChild(childrenList);
-                            }
-
-                            nodeHeader.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                this.selectNode(path);
-                                if (isExpandable) {
+                                let childrenList = null;
+                                nodeHeader.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    if (!childrenList) {
+                                        childrenList = document.createElement('ul');
+                                        for (const key in node) {
+                                            const childPath = path ? `${path}.${JSONTool.utils.escapeKey(key)}` : JSONTool.utils.escapeKey(key);
+                                            childrenList.appendChild(createNodeElement(node[key], childPath));
+                                        }
+                                        nodeWrapper.appendChild(childrenList);
+                                    }
                                     nodeWrapper.classList.toggle('collapsed');
-                                }
-                            });
+                                    this.selectNode(path);
+                                });
+                            } else {
+                                nodeHeader.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    this.selectNode(path);
+                                });
+                            }
                             return nodeWrapper;
                         };
 
                         const rootNode = createNodeElement(obj, '');
-                        if (rootNode.classList.contains('collapsed')) {
-                            rootNode.classList.remove('collapsed');
+                        rootNode.classList.remove('collapsed');
+                        const rootUl = document.createElement('ul');
+                        for (const key in obj) {
+                             rootUl.appendChild(createNodeElement(obj[key], JSONTool.utils.escapeKey(key)));
                         }
+                        rootNode.appendChild(rootUl);
                         this.container.appendChild(rootNode);
-                        JSONTool.els.nodeCount.textContent = count;
+                        
+                        JSONTool.state.totalNodes = calculateShallowCount(obj);
+                        JSONTool.els.nodeCount.textContent = JSONTool.state.totalNodes + "+";
                     },
                     selectNode(path) {
                         const { monacoEditor, pathRangeMap } = JSONTool.state;
                         if (!monacoEditor) return;
 
-                        // Highlight in editor
                         if (pathRangeMap[path]) {
                             const range = pathRangeMap[path];
                             monacoEditor.revealRangeInCenter(range, monaco.editor.ScrollType.Smooth);
                             monacoEditor.setSelection(range);
                             monacoEditor.focus();
+                        } else if (path !== '') {
+                            // FALLBACK: If jumping to a large file location not in map, search for it
+                            const key = JSONTool.utils.getNameFromPath(path);
+                            const model = monacoEditor.getModel();
+                            const matches = model.findMatches(`"${key}"`, true, false, true, null, true);
+                            if (matches.length > 0) {
+                                // Just jump to first occurrence for better than nothing
+                                monacoEditor.revealRangeInCenter(matches[0].range, monaco.editor.ScrollType.Smooth);
+                            }
                         }
                     }
                 },
 
-                // --- D3 Visualization Logic ---
                 visualization: {
                     show(vizType) {
                         JSONTool.els.vizPane.style.display = 'block';
@@ -784,15 +756,20 @@
                         JSONTool.state.currentViz = 'none';
                     },
                     render() {
-                        if (JSONTool.state.currentJson) {
-                            if (JSONTool.state.currentViz === 'network') this.renderNetworkGraph(JSONTool.state.currentJson);
-                            if (JSONTool.state.currentViz === 'tree') this.renderTreeLayout(JSONTool.state.currentJson);
+                        if (!JSONTool.state.currentJson) return;
+                        if (JSONTool.state.totalNodes > JSONTool.state.perfGuard.maxNodesForViz) {
+                            JSONTool.els.vizSvg.selectAll("*").remove();
+                            JSONTool.els.vizMessage.style.display = 'block';
+                            JSONTool.els.vizMessage.textContent = `Dataset too large to visualize (> ${JSONTool.state.perfGuard.maxNodesForViz} nodes).`;
+                            return;
                         }
+                        if (JSONTool.state.currentViz === 'network') this.renderNetworkGraph(JSONTool.state.currentJson);
+                        if (JSONTool.state.currentViz === 'tree') this.renderTreeLayout(JSONTool.state.currentJson);
                     },
                     toggleFullscreen() {
                         const isFullscreen = JSONTool.els.vizPane.classList.toggle('fullscreen');
                         JSONTool.els.btnToggleFullscreen.textContent = isFullscreen ? 'Exit Full Screen' : 'Full Screen';
-                        setTimeout(() => this.render(), 100); // Re-render after transition
+                        setTimeout(() => this.render(), 100);
                     },
                     transformJsonToHierarchy(obj) {
                         function traverse(data, name, path) {
@@ -810,38 +787,23 @@
                         const root = d3.hierarchy(this.transformJsonToHierarchy(json));
                         JSONTool.els.vizSvg.selectAll("*").remove();
                         JSONTool.els.vizMessage.style.display = 'none';
-
                         const dx = 40, dy = 220;
                         const treeLayout = d3.tree().nodeSize([dx, dy]);
                         treeLayout(root);
-
                         let x0 = Infinity, x1 = -x0;
-                        root.each(d => {
-                            if (d.x > x1) x1 = d.x;
-                            if (d.x < x0) x0 = d.x;
-                        });
-
+                        root.each(d => { if (d.x > x1) x1 = d.x; if (d.x < x0) x0 = d.x; });
                         const height = x1 - x0 + dx * 2;
                         const width = (root.height + 1) * dy;
-
-                        const container = JSONTool.els.vizSvg
-                            .attr("viewBox", [-dy / 1.5, x0 - dx, width + dy, height])
-                            .append("g");
-
+                        const container = JSONTool.els.vizSvg.attr("viewBox", [-dy / 1.5, x0 - dx, width + dy, height]).append("g");
                         container.append('g').selectAll('path').data(root.links()).enter().append('path')
-                            .attr('d', d3.linkHorizontal().x(d => d.y).y(d => d.x))
-                            .attr("class", "link");
-
+                            .attr('d', d3.linkHorizontal().x(d => d.y).y(d => d.x)).attr("class", "link");
                         const node = container.append('g').selectAll('g').data(root.descendants()).enter().append('g')
-                            .attr('class', 'node-viz') 
-                            .attr('transform', d => `translate(${d.y},${d.x})`)
+                            .attr('class', 'node-viz').attr('transform', d => `translate(${d.y},${d.x})`)
                             .on('click', (event, d) => JSONTool.treeView.selectNode(d.data.path));
-
                         node.append('circle').attr('r', 6).style("fill", d => d.children ? 'var(--accent)' : 'var(--success)');
                         const text = node.append('text').attr('dy', '0.31em').attr('x', d => d.children ? -12 : 12).attr('text-anchor', d => d.children ? 'end' : 'start');
                         text.append("tspan").text(d => d.data.name);
                         text.append("tspan").attr("class", "value-text").text(d => d.data.value !== undefined ? `: ${d.data.value}` : '');
-                        
                         const zoom = d3.zoom().scaleExtent([0.1, Infinity]).on("zoom", (event) => {
                             container.attr("transform", event.transform);
                             JSONTool.state.treeTransform = event.transform;
@@ -854,22 +816,15 @@
                         function traverse(data, parentId, key, path) {
                             const nodeId = idCounter++;
                             let nodeValue = '', type = 'object';
-
                             if (typeof data !== 'object' || data === null) {
                                 nodeValue = `: ${String(data)}`; type = 'value';
                             } else if (Array.isArray(data)) {
                                 nodeValue = ' []'; type = 'array';
-                            } else {
-                                nodeValue = ' {}';
-                            }
-                            
+                            } else { nodeValue = ' {}'; }
                             nodes.push({ id: nodeId, key, value: nodeValue, type, path });
                             if (parentId !== null) links.push({ source: parentId, target: nodeId });
-
                             if (typeof data === 'object' && data !== null) {
-                                for (const k in data) {
-                                    traverse(data[k], nodeId, k, path ? `${path}.${JSONTool.utils.escapeKey(k)}` : JSONTool.utils.escapeKey(k));
-                                }
+                                for (const k in data) traverse(data[k], nodeId, k, path ? `${path}.${JSONTool.utils.escapeKey(k)}` : JSONTool.utils.escapeKey(k));
                             }
                         }
                         traverse(obj, null, 'root', '');
@@ -879,49 +834,35 @@
                         const { nodes, links } = this.transformJsonToGraphData(json);
                         JSONTool.els.vizSvg.selectAll("*").remove();
                         JSONTool.els.vizMessage.style.display = 'none';
-
-                        if (!nodes.length) {
-                            JSONTool.els.vizMessage.textContent = 'No data to visualize.';
-                            JSONTool.els.vizMessage.style.display = 'block';
-                            return;
-                        }
-
                         const width = JSONTool.els.vizPane.clientWidth, height = JSONTool.els.vizPane.clientHeight;
                         const simulation = d3.forceSimulation(nodes)
                             .force("link", d3.forceLink(links).id(d => d.id).distance(50))
                             .force("charge", d3.forceManyBody().strength(-100))
                             .force("center", d3.forceCenter(width / 2, height / 2));
-
                         const container = JSONTool.els.vizSvg.append("g");
                         const link = container.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link");
                         const node = container.append("g").selectAll("g").data(nodes).enter().append("g")
-                            .attr("class", "node-viz")
-                            .on('click', (event, d) => JSONTool.treeView.selectNode(d.path))
+                            .attr("class", "node-viz").on('click', (event, d) => JSONTool.treeView.selectNode(d.path))
                             .call(d3.drag().on("start", dragstarted).on("drag", dragged).on("end", dragended));
-
                         node.append("circle").attr("r", d => d.type === 'value' ? 4 : 8).style("fill", d => d.type === 'array' ? 'var(--accent)' : (d.type === 'value' ? 'var(--success)' : 'var(--muted)'));
                         const text = node.append("text").attr("x", 12).attr("dy", ".35em");
                         text.append("tspan").text(d => d.key);
                         text.append("tspan").attr("class", "value-text").text(d => d.value);
-
                         simulation.on("tick", () => {
                             link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
                             node.attr("transform", d => `translate(${d.x},${d.y})`);
                         });
-                        
                         const zoom = d3.zoom().scaleExtent([0.1, Infinity]).on("zoom", (event) => {
                             container.attr("transform", event.transform);
                             JSONTool.state.networkTransform = event.transform;
                         });
                         JSONTool.els.vizSvg.call(zoom).call(zoom.transform, JSONTool.state.networkTransform);
-
                         function dragstarted(event, d) { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
                         function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
                         function dragended(event, d) { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
                     }
                 },
 
-                // --- UI Helpers ---
                 ui: {
                     setStatus(msg, type = '') {
                         JSONTool.els.editorStatus.textContent = msg;
@@ -930,27 +871,21 @@
                     updateBreadcrumb(path) {
                         const container = JSONTool.els.breadcrumb;
                         container.innerHTML = '';
-                        
                         const rootSpan = document.createElement('span');
                         rootSpan.className = 'breadcrumb-item';
                         rootSpan.textContent = '[root]';
                         rootSpan.addEventListener('click', () => JSONTool.treeView.selectNode(''));
                         container.appendChild(rootSpan);
-
                         if (!path) return;
-
                         const parts = path.split('.');
                         let currentAcc = '';
-                        
                         parts.forEach((part, index) => {
                             const sep = document.createElement('span');
                             sep.className = 'breadcrumb-separator';
                             sep.textContent = index === 0 ? ' : ' : ' > ';
                             container.appendChild(sep);
-
                             currentAcc = currentAcc ? `${currentAcc}.${part}` : part;
                             const targetPath = currentAcc;
-                            
                             const partSpan = document.createElement('span');
                             partSpan.className = 'breadcrumb-item';
                             partSpan.textContent = JSONTool.utils.unescapeKey(part);
@@ -960,7 +895,6 @@
                     }
                 },
                 
-                // --- Utility Functions ---
                 utils: {
                     debounce(func, delay) {
                         let timeout;
@@ -976,15 +910,80 @@
                         const parts = p.split('.');
                         return this.unescapeKey(parts[parts.length - 1]);
                     },
-                    prettyPrint: (obj, spaces) => {
-                        try { return JSON.stringify(obj, null, spaces); } catch (e) { return String(obj); }
+                    // NEW: Fast path finder that scans text up to cursor position
+                    getPathAtPosition(model, position) {
+                        if (!model) return '';
+                        
+                        const text = model.getValueInRange({
+                            startLineNumber: 1, startColumn: 1,
+                            endLineNumber: position.lineNumber, endColumn: position.column
+                        });
+                        
+                        const path = [];
+                        const stack = [];
+                        let inString = false;
+                        let currentString = '';
+                        let lastKey = null;
+
+                        for (let i = 0; i < text.length; i++) {
+                            const char = text[i];
+                            const prevChar = text[i - 1];
+
+                            if (char === '"' && prevChar !== '\\') {
+                                inString = !inString;
+                                if (!inString) {
+                                    // Just finished a string - might be a key
+                                    let nextCharIdx = i + 1;
+                                    while(text[nextCharIdx] && /\s/.test(text[nextCharIdx])) nextCharIdx++;
+                                    if (text[nextCharIdx] === ':') {
+                                        lastKey = currentString;
+                                    }
+                                    currentString = '';
+                                }
+                                continue;
+                            }
+
+                            if (inString) {
+                                currentString += char;
+                                continue;
+                            }
+
+                            if (char === '{') {
+                                stack.push({ type: 'object', key: lastKey, index: -1 });
+                                if (lastKey !== null) path.push(this.escapeKey(lastKey));
+                                lastKey = null;
+                            } else if (char === '[') {
+                                stack.push({ type: 'array', key: lastKey, index: 0 });
+                                if (lastKey !== null) path.push(this.escapeKey(lastKey));
+                                lastKey = null;
+                            } else if (char === '}') {
+                                const popped = stack.pop();
+                                if (popped && popped.key !== null) path.pop();
+                            } else if (char === ']') {
+                                const popped = stack.pop();
+                                if (popped && popped.key !== null) path.pop();
+                            } else if (char === ',') {
+                                const currentContainer = stack[stack.length - 1];
+                                if (currentContainer && currentContainer.type === 'array') {
+                                    currentContainer.index++;
+                                }
+                            }
+                        }
+
+                        // Add the final active item in the path
+                        const top = stack[stack.length - 1];
+                        if (top) {
+                            if (top.type === 'array') {
+                                path.push(this.escapeKey(top.index));
+                            } else if (lastKey !== null) {
+                                path.push(this.escapeKey(lastKey));
+                            }
+                        }
+
+                        return path.join('.');
                     }
                 },
 
-                /**
-                 * Applies a color theme to the UI and editor.
-                 * @param {string} theme - 'light' or 'dark'
-                 */
                 applyTheme(theme) {
                     if (theme === 'light') {
                         document.body.classList.add('light-theme');
@@ -999,7 +998,6 @@
                 }
             };
 
-            // Start the application
             JSONTool.init();
         });
     </script>
