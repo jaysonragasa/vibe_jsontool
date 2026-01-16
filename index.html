@@ -164,6 +164,37 @@
       .small { font-size: 12px; }
       .search { padding: 6px; border-radius: 6px; border: 1px solid var(--border-light); background: transparent; color: var(--muted); width: 100%; box-sizing: border-box; }
       
+      /* Breadcrumb Styles */
+      .breadcrumb {
+          padding: 6px 10px;
+          background: var(--glass);
+          border-radius: 6px;
+          font-family: 'Fira Code', monospace;
+          font-size: 11px;
+          color: var(--muted);
+          display: flex;
+          flex-wrap: wrap;
+          gap: 2px;
+          align-items: center;
+          min-height: 24px;
+          border: 1px solid var(--border-light);
+      }
+      .breadcrumb-item {
+          cursor: pointer;
+          padding: 1px 4px;
+          border-radius: 4px;
+          transition: background 0.2s, color 0.2s;
+      }
+      .breadcrumb-item:hover {
+          background: var(--border-light);
+          color: var(--text);
+      }
+      .breadcrumb-separator {
+          opacity: 0.4;
+          font-size: 10px;
+          margin: 0 2px;
+      }
+
       /* Visualization Panel */
       #vizPane {
         height: 400px;
@@ -230,6 +261,10 @@
             <div class="split" id="splitter"></div>
 
             <section class="pane editor">
+                <!-- Breadcrumb Bar -->
+                <div id="breadcrumb" class="breadcrumb">
+                    <span style="opacity: 0.5;">Path: [root]</span>
+                </div>
                  <div id="editorContainer" class="editor-container">
                     <div id="editor"></div>
                 </div>
@@ -302,7 +337,7 @@
                         'btnCopy', 'btnDownload', 'btnClear', 'search', 'editorStatus',
                         'btnTheme', 'btnWordWrap', 'editorContainer', 'btnToggleNetwork',
                         'btnToggleTree', 'vizPane', 'vizMessage', 'btnToggleValues',
-                        'btnToggleFullscreen', 'btnCloseViz', 'splitter'
+                        'btnToggleFullscreen', 'btnCloseViz', 'splitter', 'breadcrumb'
                     ];
                     ids.forEach(id => this.els[id] = document.getElementById(id));
                     this.els.vizSvg = d3.select("#vizSvg");
@@ -330,6 +365,11 @@
                         this.state.monacoEditor.onDidChangeModelContent(this.utils.debounce(() => {
                             this.handlers.handleUpdateFromEditor();
                         }, 400));
+
+                        // Listener for cursor/selection changes to update breadcrumb
+                        this.state.monacoEditor.onDidChangeCursorSelection(this.utils.debounce(() => {
+                            this.handlers.handleCursorChange();
+                        }, 50));
                         
                         this.loadSampleData();
                         this.applyTheme(savedTheme);
@@ -418,6 +458,7 @@
                             JSONTool.state.currentJson = null;
                             JSONTool.ui.setStatus('');
                             JSONTool.els.vizMessage.textContent = 'Load valid JSON to generate a graph.';
+                            JSONTool.ui.updateBreadcrumb('');
                             return;
                         }
 
@@ -431,11 +472,41 @@
                             if (JSONTool.els.vizPane.style.display === 'block') {
                                 JSONTool.visualization.render();
                             }
+                            this.handleCursorChange();
                         } catch (e) {
                             JSONTool.state.currentJson = null;
                             JSONTool.state.pathRangeMap = {};
                             JSONTool.els.vizMessage.textContent = 'Invalid JSON. Cannot generate graph.';
+                            JSONTool.ui.updateBreadcrumb('');
                         }
+                    },
+                    handleCursorChange() {
+                        if (!JSONTool.state.monacoEditor || !JSONTool.state.pathRangeMap) return;
+                        
+                        const position = JSONTool.state.monacoEditor.getPosition();
+                        if (!position) return;
+
+                        const line = position.lineNumber;
+                        let bestPath = '';
+                        let maxLine = -1;
+
+                        // Find the "deepest" path that starts at or before the current cursor line
+                        // This identifies where the user is currently working.
+                        for (const path in JSONTool.state.pathRangeMap) {
+                            const range = JSONTool.state.pathRangeMap[path];
+                            if (range.startLineNumber <= line) {
+                                if (range.startLineNumber > maxLine) {
+                                    maxLine = range.startLineNumber;
+                                    bestPath = path;
+                                } else if (range.startLineNumber === maxLine) {
+                                    // If same line, pick the longer path (nested item)
+                                    if (path.length > bestPath.length) {
+                                        bestPath = path;
+                                    }
+                                }
+                            }
+                        }
+                        JSONTool.ui.updateBreadcrumb(bestPath);
                     },
                     handleFormat(mode) {
                         if (!JSONTool.state.monacoEditor) return;
@@ -855,6 +926,37 @@
                     setStatus(msg, type = '') {
                         JSONTool.els.editorStatus.textContent = msg;
                         JSONTool.els.editorStatus.className = `status ${type}`;
+                    },
+                    updateBreadcrumb(path) {
+                        const container = JSONTool.els.breadcrumb;
+                        container.innerHTML = '';
+                        
+                        const rootSpan = document.createElement('span');
+                        rootSpan.className = 'breadcrumb-item';
+                        rootSpan.textContent = '[root]';
+                        rootSpan.addEventListener('click', () => JSONTool.treeView.selectNode(''));
+                        container.appendChild(rootSpan);
+
+                        if (!path) return;
+
+                        const parts = path.split('.');
+                        let currentAcc = '';
+                        
+                        parts.forEach((part, index) => {
+                            const sep = document.createElement('span');
+                            sep.className = 'breadcrumb-separator';
+                            sep.textContent = index === 0 ? ' : ' : ' > ';
+                            container.appendChild(sep);
+
+                            currentAcc = currentAcc ? `${currentAcc}.${part}` : part;
+                            const targetPath = currentAcc;
+                            
+                            const partSpan = document.createElement('span');
+                            partSpan.className = 'breadcrumb-item';
+                            partSpan.textContent = JSONTool.utils.unescapeKey(part);
+                            partSpan.addEventListener('click', () => JSONTool.treeView.selectNode(targetPath));
+                            container.appendChild(partSpan);
+                        });
                     }
                 },
                 
